@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard — Visitas Comerciais</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #f5f4f0;
+  color: #1a1a18;
+  min-height: 100vh;
+  padding: 1.5rem 1rem;
+}
+.container { max-width: 980px; margin: 0 auto; }
+header { margin-bottom: 1.25rem; }
+header h1 { font-size: 20px; font-weight: 600; }
+header p  { font-size: 12px; color: #898781; margin-top: 3px; }
+
+.toolbar {
+  display: flex; flex-wrap: wrap; gap: 10px;
+  margin-bottom: 1rem; align-items: center;
+}
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 16px; border-radius: 8px; font-size: 13px;
+  font-weight: 500; cursor: pointer; border: none; transition: opacity .15s;
+}
+.btn:hover { opacity: .88; }
+.btn-primary { background:#2a78d6; color:#fff; }
+.btn-success { background:#1baf7a; color:#fff; }
+.btn-warning { background:#eda100; color:#fff; }
+.btn-danger  { background:#e05353; color:#fff; }
+.status-bar {
+  font-size:12px; color:#898781; padding:6px 12px;
+  background:#fff; border-radius:8px; border:1px solid #e8e7e3; flex:1; min-width:180px;
+}
+
+/* Filtro de período */
+.filter-bar {
+  display:flex; flex-wrap:wrap; gap:10px; align-items:center;
+  background:#fff; border:1px solid #e8e7e3; border-radius:10px;
+  padding:10px 14px; margin-bottom:1rem;
+}
+.filter-bar label { font-size:12px; color:#898781; margin-right:4px; }
+.filter-bar input[type=date] {
+  font-size:12px; padding:5px 8px; border:1px solid #d0cfc9;
+  border-radius:6px; color:#1a1a18; background:#f5f4f0; cursor:pointer;
+}
+.filter-bar input[type=date]:focus { outline:none; border-color:#2a78d6; }
+.btn-filter { background:#2a78d6; color:#fff; padding:5px 14px; font-size:12px; border-radius:6px; border:none; cursor:pointer; font-weight:500; }
+.btn-filter:hover { opacity:.88; }
+.btn-clear-filter { background:none; border:none; color:#b4b2a9; font-size:12px; cursor:pointer; text-decoration:underline; }
+.btn-clear-filter:hover { color:#52514e; }
+.filter-badge {
+  font-size:11px; background:#e8f0fb; color:#2a78d6;
+  padding:3px 10px; border-radius:20px; font-weight:500;
+}
+
+/* Histórico badges */
+.history-row { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:1rem; align-items:center; }
+.history-label { font-size:12px; color:#898781; margin-right:4px; }
+.badge {
+  display:inline-flex; align-items:center; gap:6px;
+  background:#fff; border:1px solid #d0cfc9; border-radius:20px;
+  padding:4px 10px; font-size:12px; color:#52514e;
+}
+.badge-dot { width:8px; height:8px; border-radius:50%; background:#2a78d6; }
+.badge-remove { cursor:pointer; color:#b4b2a9; font-size:14px; line-height:1; margin-left:2px; }
+.badge-remove:hover { color:#e05353; }
+
+/* KPIs */
+.kpi-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-bottom:1.25rem; }
+.kpi { background:#fff; border-radius:10px; border:1px solid #e8e7e3; padding:.9rem 1.1rem; }
+.kpi-label { font-size:11px; color:#898781; margin-bottom:5px; text-transform:uppercase; letter-spacing:.04em; }
+.kpi-val   { font-size:26px; font-weight:600; color:#1a1a18; line-height:1; }
+.kpi-sub   { font-size:11px; color:#b4b2a9; margin-top:3px; }
+
+.card { background:#fff; border-radius:12px; border:1px solid #e8e7e3; padding:1.25rem; }
+.card-title { font-size:12px; font-weight:600; color:#52514e; text-transform:uppercase; letter-spacing:.04em; margin-bottom:1rem; }
+.chart-wrap { position:relative; width:100%; }
+
+.empty { text-align:center; padding:3rem 1rem; color:#b4b2a9; }
+.empty-icon  { font-size:40px; margin-bottom:10px; }
+.empty-title { font-size:15px; font-weight:500; color:#52514e; margin-bottom:6px; }
+.empty-sub   { font-size:13px; }
+
+.toast {
+  position:fixed; bottom:24px; right:24px; background:#1a1a18; color:#fff;
+  padding:10px 18px; border-radius:8px; font-size:13px;
+  opacity:0; transform:translateY(10px); transition:all .25s;
+  z-index:999; pointer-events:none;
+}
+.toast.show { opacity:1; transform:translateY(0); }
+footer { margin-top:1rem; font-size:11px; color:#b4b2a9; text-align:right; }
+input[type=file] { display:none; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <h1>Visitas Comerciais — por colaborador</h1>
+    <p>Filtros automáticos: somente atividades externas · check-in realizado · junho excluído</p>
+  </header>
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <button class="btn btn-primary" onclick="document.getElementById('fileExcel').click()">📂 Importar Excel</button>
+    <button class="btn btn-success" onclick="salvarJSON()">💾 Salvar histórico</button>
+    <button class="btn btn-warning" onclick="document.getElementById('fileJSON').click()">📁 Carregar histórico</button>
+    <button class="btn btn-danger"  onclick="limparTudo()">🗑 Limpar tudo</button>
+    <div class="status-bar" id="statusBar">Nenhum dado carregado.</div>
+  </div>
+
+  <input type="file" id="fileExcel" accept=".xlsx,.xls" onchange="importarExcel(this)">
+  <input type="file" id="fileJSON"  accept=".json"      onchange="carregarJSON(this)">
+
+  <!-- Filtro de período -->
+  <div class="filter-bar" id="filterBar" style="display:none">
+    <label>De</label>
+    <input type="date" id="filtroInicio">
+    <label>Até</label>
+    <input type="date" id="filtroFim">
+    <button class="btn-filter" onclick="aplicarFiltro()">Filtrar</button>
+    <button class="btn-clear-filter" onclick="limparFiltro()">Limpar filtro</button>
+    <span class="filter-badge" id="filtroBadge" style="display:none"></span>
+  </div>
+
+  <!-- Histórico de importações -->
+  <div class="history-row" id="historyRow" style="display:none">
+    <span class="history-label">Importações:</span>
+    <div id="historyBadges"></div>
+  </div>
+
+  <!-- KPIs -->
+  <div class="kpi-row" id="kpiRow" style="display:none">
+    <div class="kpi">
+      <div class="kpi-label">Total de visitas</div>
+      <div class="kpi-val" id="kpiTotal">—</div>
+      <div class="kpi-sub" id="kpiPeriodo">—</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Colaboradores</div>
+      <div class="kpi-val" id="kpiPessoas">—</div>
+      <div class="kpi-sub">com atividade</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Média por pessoa</div>
+      <div class="kpi-val" id="kpiMedia">—</div>
+      <div class="kpi-sub">visitas</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Maior volume</div>
+      <div class="kpi-val" id="kpiMax">—</div>
+      <div class="kpi-sub" id="kpiMaxNome">—</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Importações</div>
+      <div class="kpi-val" id="kpiImportacoes">—</div>
+      <div class="kpi-sub">arquivos</div>
+    </div>
+  </div>
+
+  <!-- Gráfico -->
+  <div class="card" id="chartCard">
+    <div class="card-title" id="cardTitle">Ranking de visitas por colaborador</div>
+    <div id="emptyState" class="empty">
+      <div class="empty-icon">📊</div>
+      <div class="empty-title">Nenhum dado ainda</div>
+      <div class="empty-sub">Importe um arquivo Excel ou carregue um histórico salvo.</div>
+    </div>
+    <div class="chart-wrap" id="chartWrap" style="display:none">
+      <canvas id="barChart"></canvas>
+    </div>
+  </div>
+
+  <footer id="footer" style="display:none">Última atualização: <span id="footerDate"></span></footer>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── Estado global ─────────────────────────────────────────────────
+// historico: { chave: { nome, data, periodo, registros: [{nome, data: 'YYYY-MM-DD'}] } }
+let historico = {};
+let chartInstance = null;
+let filtroInicio = null; // Date
+let filtroFim    = null; // Date
+
+const EXTERNOS = [
+  'visita a corretor','visita ao cliente','reuni\u00e3o externa','reuniao externa',
+  'almo\u00e7o','almoco','hap tour','implanta\u00e7\u00e3o','implantacao',
+  'envio de proposta','odonto: liga\u00e7\u00e3o','odonto: ligacao','video'
+];
+
+// ── Toast ─────────────────────────────────────────────────────────
+function toast(msg, dur=2800) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), dur);
+}
+
+// ── Importar Excel ────────────────────────────────────────────────
+function importarExcel(input) {
+  const file = input.files[0];
+  if (!file) return;
+  input.value = '';
+  document.getElementById('statusBar').textContent = 'Processando ' + file.name + '...';
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const wb   = XLSX.read(data, { type:'array', cellDates:true });
+      const sheetName = wb.SheetNames.find(s => s.toUpperCase().includes('COMERCIAL')) || wb.SheetNames[0];
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval:'' });
+      if (!rows.length) { toast('⚠️ Planilha vazia.'); return; }
+
+      // Detectar colunas
+      const cols = Object.keys(rows[0]);
+      const find = (kws) => cols.find(c => kws.some(k => c.toLowerCase().includes(k)));
+      // Priorizar coluna exata "Atribuído"
+      const cAtrib    = cols.find(c => c.toLowerCase().trim() === 'atribu\u00eddo' || c.toLowerCase().trim() === 'atribuido')
+                     || find(['atribu\u00eddo','atribuido','nome']);
+      const cCheckin  = find(['checkin','check-in','check in']);
+      const cData     = find(['data']);
+      const cCheckado = find(['checkado']);
+      const cAssunto  = find(['assunto']);
+      const colData   = cCheckin || cData;
+
+      if (!cAtrib || !colData) {
+        toast('⚠️ Não foi possível identificar as colunas.');
+        return;
+      }
+
+      // Processar linhas — guardar lista de registros com data individual
+      const registros = [];
+      let dtMin = null, dtMax = null;
+
+      rows.forEach(row => {
+        if (cCheckado && String(row[cCheckado]).trim() !== '1') return;
+
+        let d = row[colData];
+        let dt = null;
+        if (d instanceof Date) dt = d;
+        else if (typeof d === 'string' && d) {
+          const p = d.split('/');
+          if (p.length >= 3) dt = new Date(+p[2], +p[1]-1, +p[0]);
+          else { const pd = new Date(d); if (!isNaN(pd)) dt = pd; }
+        } else if (typeof d === 'number') {
+          dt = new Date((d - 25569) * 86400000);
+        }
+        if (!dt || isNaN(dt)) return;
+        if (dt.getMonth() + 1 === 6) return; // excluir junho
+
+        if (cAssunto) {
+          const a = String(row[cAssunto]).toLowerCase();
+          if (!EXTERNOS.some(ext => a.includes(ext))) return;
+        }
+
+        const nome = String(row[cAtrib]).trim();
+        if (!nome) return;
+
+        // Guardar registro com data no formato YYYY-MM-DD para filtro
+        const iso = dt.toISOString().slice(0,10);
+        registros.push({ nome, data: iso });
+
+        if (!dtMin || dt < dtMin) dtMin = dt;
+        if (!dtMax || dt > dtMax) dtMax = dt;
+      });
+
+      if (!registros.length) {
+        toast('⚠️ Nenhum registro encontrado após os filtros.');
+        document.getElementById('statusBar').textContent = 'Nenhum registro encontrado.';
+        return;
+      }
+
+      const chave   = file.name + '_' + new Date().toISOString().slice(0,10);
+      const periodo = dtMin && dtMax
+        ? dtMin.toLocaleDateString('pt-BR') + ' a ' + dtMax.toLocaleDateString('pt-BR')
+        : '—';
+
+      historico[chave] = {
+        nome: file.name,
+        data: new Date().toLocaleDateString('pt-BR'),
+        periodo,
+        registros   // array de {nome, data:'YYYY-MM-DD'}
+      };
+
+      // Definir datas padrão do filtro se ainda não definidas
+      if (!filtroInicio && dtMin) setFiltroDefault(dtMin, dtMax);
+
+      renderizar();
+      toast('✅ ' + file.name + ' importado! ' + registros.length + ' registros.');
+
+    } catch(err) {
+      toast('⚠️ Erro: ' + err.message);
+      document.getElementById('statusBar').textContent = 'Erro ao processar o arquivo.';
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// ── Definir datas padrão do filtro ───────────────────────────────
+function setFiltroDefault(dtMin, dtMax) {
+  document.getElementById('filtroInicio').value = dtMin.toISOString().slice(0,10);
+  document.getElementById('filtroFim').value    = dtMax.toISOString().slice(0,10);
+}
+
+// ── Aplicar filtro ────────────────────────────────────────────────
+function aplicarFiltro() {
+  const ini = document.getElementById('filtroInicio').value;
+  const fim = document.getElementById('filtroFim').value;
+  if (!ini || !fim) { toast('⚠️ Preencha as duas datas.'); return; }
+  filtroInicio = new Date(ini + 'T00:00:00');
+  filtroFim    = new Date(fim + 'T23:59:59');
+  if (filtroInicio > filtroFim) { toast('⚠️ A data inicial deve ser menor que a final.'); return; }
+  renderizar();
+  toast('🔍 Filtro aplicado: ' + ini.split('-').reverse().join('/') + ' a ' + fim.split('-').reverse().join('/'));
+}
+
+function limparFiltro() {
+  filtroInicio = null;
+  filtroFim    = null;
+  document.getElementById('filtroInicio').value = '';
+  document.getElementById('filtroFim').value    = '';
+  document.getElementById('filtroBadge').style.display = 'none';
+  renderizar();
+  toast('Filtro de período removido.');
+}
+
+// ── Consolidar com filtro de período ─────────────────────────────
+function consolidar() {
+  const totais = {};
+  Object.values(historico).forEach(imp => {
+    imp.registros.forEach(({ nome, data }) => {
+      if (filtroInicio && filtroFim) {
+        const dt = new Date(data + 'T12:00:00');
+        if (dt < filtroInicio || dt > filtroFim) return;
+      }
+      totais[nome] = (totais[nome] || 0) + 1;
+    });
+  });
+  return Object.entries(totais).sort((a,b) => b[1] - a[1]);
+}
+
+// ── Renderizar dashboard ──────────────────────────────────────────
+function renderizar() {
+  const sorted = consolidar();
+  const keys   = Object.keys(historico);
+
+  // Mostrar barra de filtro se há dados
+  if (keys.length) document.getElementById('filterBar').style.display = 'flex';
+
+  // Badge de filtro ativo
+  const badge = document.getElementById('filtroBadge');
+  if (filtroInicio && filtroFim) {
+    const ini = filtroInicio.toLocaleDateString('pt-BR');
+    const fim = filtroFim.toLocaleDateString('pt-BR');
+    badge.textContent = '📅 ' + ini + ' a ' + fim;
+    badge.style.display = 'inline-block';
+    document.getElementById('cardTitle').textContent =
+      'Ranking de visitas por colaborador (' + ini + ' a ' + fim + ')';
+  } else {
+    badge.style.display = 'none';
+    document.getElementById('cardTitle').textContent = 'Ranking de visitas por colaborador';
+  }
+
+  if (!sorted.length) {
+    document.getElementById('emptyState').style.display = 'block';
+    document.getElementById('chartWrap').style.display  = 'none';
+    document.getElementById('kpiRow').style.display     = 'none';
+    document.getElementById('historyRow').style.display = 'none';
+    document.getElementById('footer').style.display     = 'none';
+    if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+    return;
+  }
+
+  // KPIs
+  const total   = sorted.reduce((s,[,v]) => s+v, 0);
+  const media   = (total / sorted.length).toFixed(1).replace('.',',');
+  const maxNome = sorted[0][0].split(' ').slice(0,2).join(' ');
+  const periodos = Object.values(historico).map(h => h.periodo).filter(p => p !== '—');
+  const periodoCons = filtroInicio && filtroFim
+    ? filtroInicio.toLocaleDateString('pt-BR') + ' a ' + filtroFim.toLocaleDateString('pt-BR')
+    : (periodos.length ? periodos[0].split(' a ')[0] + ' a ' + periodos[periodos.length-1].split(' a ')[1] : '—');
+
+  document.getElementById('kpiTotal').textContent       = total.toLocaleString('pt-BR');
+  document.getElementById('kpiPeriodo').textContent     = periodoCons;
+  document.getElementById('kpiPessoas').textContent     = sorted.length;
+  document.getElementById('kpiMedia').textContent       = media;
+  document.getElementById('kpiMax').textContent         = sorted[0][1];
+  document.getElementById('kpiMaxNome').textContent     = maxNome;
+  document.getElementById('kpiImportacoes').textContent = keys.length;
+  document.getElementById('kpiRow').style.display       = 'grid';
+
+  // Badges importações
+  const badges = document.getElementById('historyBadges');
+  badges.innerHTML = '';
+  Object.entries(historico).forEach(([chave, imp]) => {
+    const b = document.createElement('span');
+    b.className = 'badge';
+    b.innerHTML = `<span class="badge-dot"></span>${imp.nome} <small>(${imp.data})</small><span class="badge-remove" onclick="removerImportacao('${chave}')" title="Remover">×</span>`;
+    badges.appendChild(b);
+  });
+  document.getElementById('historyRow').style.display = 'flex';
+
+  document.getElementById('statusBar').textContent =
+    keys.length + ' importação(ões) · ' + sorted.length + ' colaboradores · ' + total.toLocaleString('pt-BR') + ' visitas' +
+    (filtroInicio ? ' (filtrado)' : '');
+
+  const h = Math.max(380, sorted.length * 24 + 60);
+  document.getElementById('chartWrap').style.height = h + 'px';
+  document.getElementById('emptyState').style.display = 'none';
+  document.getElementById('chartWrap').style.display  = 'block';
+  document.getElementById('footer').style.display     = 'block';
+  document.getElementById('footerDate').textContent   = new Date().toLocaleString('pt-BR');
+
+  // Gráfico
+  if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+
+  const valueLabelsPlugin = {
+    id: 'valueLabels',
+    afterDatasetsDraw(chart) {
+      const { ctx, scales: { x } } = chart;
+      chart.data.datasets.forEach((ds, i) => {
+        chart.getDatasetMeta(i).data.forEach((bar, idx) => {
+          const v = ds.data[idx];
+          ctx.save();
+          ctx.font = '500 11px Arial';
+          ctx.fillStyle = '#52514e';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(v, x.getPixelForValue(v) + 6, bar.y);
+          ctx.restore();
+        });
+      });
+    }
+  };
+
+  chartInstance = new Chart(document.getElementById('barChart'), {
+    plugins: [valueLabelsPlugin],
+    type: 'bar',
+    data: {
+      labels: sorted.map(([n]) => n),
+      datasets: [{
+        label: 'Visitas',
+        data: sorted.map(([,v]) => v),
+        backgroundColor: '#2a78d6',
+        borderRadius: { topRight:4, bottomRight:4, topLeft:0, bottomLeft:0 },
+        borderSkipped: 'left',
+        barThickness: 18
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      layout: { padding: { right: 40 } },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1a1a18',
+          callbacks: { label: (item) => '  ' + item.parsed.x + ' visitas' }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: 'rgba(0,0,0,0.05)' },
+          ticks: { color:'#898781', font:{ size:11 } },
+          title: { display:true, text:'Nº de visitas', color:'#898781', font:{ size:11 }, padding:{ top:6 } }
+        },
+        y: {
+          ticks: { color:'#3d3d3a', font:{ size:11 } },
+          grid: { display:false }
+        }
+      }
+    }
+  });
+}
+
+// ── Remover importação ────────────────────────────────────────────
+function removerImportacao(chave) {
+  if (!confirm('Remover a importação "' + historico[chave].nome + '"?')) return;
+  delete historico[chave];
+  renderizar();
+  toast('🗑 Importação removida.');
+}
+
+// ── Limpar tudo ───────────────────────────────────────────────────
+function limparTudo() {
+  if (!Object.keys(historico).length) { toast('Nenhum dado para limpar.'); return; }
+  if (!confirm('Limpar todo o histórico? Esta ação não pode ser desfeita.')) return;
+  historico = {};
+  filtroInicio = null;
+  filtroFim    = null;
+  document.getElementById('filtroInicio').value = '';
+  document.getElementById('filtroFim').value    = '';
+  document.getElementById('filterBar').style.display = 'none';
+  renderizar();
+  document.getElementById('statusBar').textContent = 'Histórico limpo.';
+  toast('🗑 Histórico limpo.');
+}
+
+// ── Salvar JSON ───────────────────────────────────────────────────
+function salvarJSON() {
+  if (!Object.keys(historico).length) { toast('⚠️ Nenhum dado para salvar.'); return; }
+  const json = JSON.stringify({ versao:2, exportado:new Date().toISOString(), historico }, null, 2);
+  const blob = new Blob([json], { type:'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = 'historico_visitas_' + new Date().toISOString().slice(0,10) + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('💾 Histórico salvo!');
+}
+
+// ── Carregar JSON ─────────────────────────────────────────────────
+function carregarJSON(input) {
+  const file = input.files[0];
+  if (!file) return;
+  input.value = '';
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const obj = JSON.parse(e.target.result);
+      if (!obj.historico) { toast('⚠️ Arquivo inválido.'); return; }
+      const qtdAntes = Object.keys(historico).length;
+      Object.assign(historico, obj.historico);
+      const adicionados = Object.keys(historico).length - qtdAntes;
+      document.getElementById('filterBar').style.display = 'flex';
+      renderizar();
+      toast('📁 Histórico carregado! (' + adicionados + ' importação(ões) adicionada(s))');
+    } catch(err) {
+      toast('⚠️ Erro ao carregar JSON: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+</script>
+</body>
+</html>
